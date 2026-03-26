@@ -1,0 +1,20 @@
+# Models
+models/
+*.joblib
+*.pkl
+*.h5
+*.pt
+
+# Data
+data/raw/
+data/processed/
+*.csv
+
+# Notebooks
+.ipynb_checkpoints/
+**/notebook_trial*
+
+# Python
+__pycache__/
+*.pyc
+.env
