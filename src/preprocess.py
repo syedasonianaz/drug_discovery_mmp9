@@ -2,62 +2,90 @@ import pandas as pd
 import numpy as np
 import os
 from rdkit import Chem
-from rdkit.Chem import Descriptors, Lipinski
+from rdkit.Chem import AllChem
+from rdkit.Chem.Scaffolds import MurckoScaffold
+from collections import defaultdict
+from imblearn.over_sampling import SMOTE
 
-class MoleculeRefinery:
-    def __init__(self, input_path: str):
-        self.df = pd.read_csv(input_path)
-        print(f"Loaded {len(self.df)} molecules.")
+class MoleculePreprocessor:
+    """
+    Handles the structural splitting, feature extraction (Morgan FPs),
+    and class balancing (SMOTE) for the bioactivity dataset.
+    """
+    
+    def __init__(self, radius=2, n_bits=2048):
+        self.radius = radius
+        self.n_bits = n_bits
+        self.smote = SMOTE(random_state=42)
 
-    def clean_and_convert(self):
-        # 1. Drop rows missing critical data
-        self.df = self.df.dropna(subset=['standard_value', 'canonical_smiles'])
-        
-        # 2. Fix the "Divide by Zero" - Remove values <= 0
-        self.df = self.df[self.df['standard_value'] > 0]
-        
-        # 3. pIC50 Math
-        self.df['standard_value'] = pd.to_numeric(self.df['standard_value']).clip(upper=100000000)
-        self.df['pIC50'] = -np.log10(self.df['standard_value'] * (10**-9))
-        return self
+    def _get_scaffold(self, smiles):
+        """Internal helper to generate Murcko Scaffold."""
+        mol = Chem.MolFromSmiles(smiles)
+        return MurckoScaffold.MurckoScaffoldSmiles(mol=mol, includeChirality=False) if mol else None
 
-    def add_lipinski_descriptors(self):
-        print("Validating molecules and calculating Lipinski...")
-        
-        # 1. Create RDKit Mol objects and keep track of which are valid
-        mols = [Chem.MolFromSmiles(s) for s in self.df['canonical_smiles']]
-        
-        # 2. Add the mol objects to the dataframe temporarily to filter
-        self.df['temp_mol'] = mols
-        
-        # 3. CRITICAL: Drop rows where RDKit returned None (Invalid SMILES)
-        initial_count = len(self.df)
-        self.df = self.df.dropna(subset=['temp_mol'])
-        print(f"Removed {initial_count - len(self.df)} invalid molecules.")
-        
-        # 4. Now calculate descriptors safely
-        self.df['MW'] = self.df['temp_mol'].apply(Descriptors.MolWt)
-        self.df['LogP'] = self.df['temp_mol'].apply(Descriptors.MolLogP)
-        self.df['NumHDonors'] = self.df['temp_mol'].apply(Lipinski.NumHDonors)
-        self.df['NumHAcceptors'] = self.df['temp_mol'].apply(Lipinski.NumHAcceptors)
-        
-        # Drop the temporary mol column
-        self.df = self.df.drop(columns=['temp_mol'])
-        return self
+    def _generate_fp(self, smiles):
+        """Internal helper to generate Morgan Fingerprint bit vector."""
+        mol = Chem.MolFromSmiles(smiles)
+        if not mol: return np.zeros((self.n_bits,))
+        return np.array(AllChem.GetMorganFingerprintAsBitVect(mol, self.radius, nBits=self.n_bits))
 
-    def save(self, output_filename: str):
-        # Using the absolute path logic to ensure it saves in the right place
-        current_file = os.path.abspath(__file__)
-        base_path = os.path.dirname(os.path.dirname(current_file))
-        processed_path = os.path.join(base_path, "data", "processed", output_filename)
+    def scaffold_split(self, df, train_size=0.8):
+        """
+        Groups compounds by scaffold and splits them into train/test sets
+        to ensure no structural leakage.
+        """
+        print("Performing Scaffold Split...")
+        df['scaffold'] = df['canonical_smiles'].apply(self._get_scaffold)
         
-        os.makedirs(os.path.dirname(processed_path), exist_ok=True)
-        self.df.to_csv(processed_path, index=False)
-        print(f"✅ Cleaned data saved to: {processed_path}")
+        scaffold_to_indices = defaultdict(list)
+        for idx, scaffold in enumerate(df['scaffold']):
+            scaffold_to_indices[scaffold].append(idx)
+            
+        scaffold_sets = sorted(scaffold_to_indices.values(), key=len, reverse=True)
+        
+        train_indices, test_indices = [], []
+        for indices in scaffold_sets:
+            if len(train_indices) / len(df) < train_size:
+                train_indices.extend(indices)
+            else:
+                test_indices.extend(indices)
+                
+        return df.iloc[train_indices].copy(), df.iloc[test_indices].copy()
 
+    def prepare_matrices(self, df_train, df_test):
+        """
+        Converts dataframes to feature matrices (X) and labels (y),
+        then applies SMOTE to the training set.
+        """
+        print("Generating Morgan Fingerprints...")
+        X_train = np.stack(df_train['canonical_smiles'].apply(self._generate_fp))
+        y_train = df_train['bioactivity_class'].values
+        
+        X_test = np.stack(df_test['canonical_smiles'].apply(self._generate_fp))
+        y_test = df_test['bioactivity_class'].values
+        
+        print("Applying SMOTE to balance training data...")
+        X_train_bal, y_train_bal = self.smote.fit_resample(X_train, y_train)
+        
+        return X_train_bal, y_train_bal, X_test, y_test
+
+    def save_processed_data(self, X_train, y_train, X_test, y_test, output_path):
+        """Saves the final matrices as a compressed numpy archive."""
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        np.savez_compressed(output_path, X_train=X_train, y_train=y_train, X_test=X_test, y_test=y_test)
+        print(f"Model-ready data saved to {output_path}")
+
+# --- Execution Logic ---
 if __name__ == "__main__":
-    raw_path = r"E:\VS Code\machine_learning\drug_discovery\data\raw\mmp9.csv"
-    refinery = MoleculeRefinery(raw_path)
-    (refinery.clean_and_convert()
-             .add_lipinski_descriptors()
-             .save("mmp9_processed.csv"))
+    # 1. Load the cleaned data from ingest.py
+    df = pd.read_csv('../data/processed/mmp9_clean.csv')
+    
+    # 2. Preprocess
+    preprocessor = MoleculePreprocessor()
+    df_train, df_test = preprocessor.scaffold_split(df)
+    
+    # 3. Featurize and Balance
+    X_tr, y_tr, X_te, y_te = preprocessor.prepare_matrices(df_train, df_test)
+    
+    # 4. Export
+    preprocessor.save_processed_data(X_tr, y_tr, X_te, y_te, '../data/processed/mmp9_model_ready.npz')

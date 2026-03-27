@@ -7,8 +7,11 @@ models/
 
 # Data
 data/raw/
+mmp9.csv
+
 data/processed/
-*.csv
+mmp9_clean.csv
+mmp9_processed.csv
 
 # Notebooks
 .ipynb_checkpoints/

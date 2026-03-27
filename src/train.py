@@ -1,64 +1,95 @@
 import pandas as pd
 import numpy as np
-import os
 import joblib
-from rdkit import Chem, DataStructs
-from rdkit.Chem import AllChem
-from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.metrics import mean_squared_error, r2_score
+import os
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import matthews_corrcoef, confusion_matrix
 
 class ModelTrainer:
-    def __init__(self, data_path: str):
-        self.df = pd.read_csv(data_path)
-        self.model = RandomForestRegressor(n_estimators=100, random_state=42)
+    """
+    Handles training the champion Random Forest model and 
+    serializing it for deployment.
+    """
 
-    def generate_fingerprints(self, smiles_column='canonical_smiles'):
-        """Converts SMILES into a 2048-bit Morgan Fingerprint array."""
-        print("Generating Morgan Fingerprints...")
-        mols = [Chem.MolFromSmiles(s) for s in self.df[smiles_column]]
-        fps = [AllChem.GetMorganFingerprintAsBitVect(m, 2, nBits=2048) for m in mols]
+    def __init__(self, n_estimators=300, max_depth=40, threshold=0.4417):
+        # We hardcode our optimized "Champion" parameters as defaults
+        self.n_estimators = n_estimators
+        self.max_depth = max_depth
+        self.threshold = threshold
+        self.model = None
+
+    def load_data(self, data_path):
+        """Loads the .npz archive created by preprocess.py."""
+        print(f"Loading matrices from {data_path}...")
+        data = np.load(data_path)
+        return data['X_train'], data['y_train'], data['X_test'], data['y_test']
+
+    def train(self, X_train, y_train):
+        """Trains the Random Forest with our optimized settings."""
+        print("Training Champion Random Forest... (this may take a moment)")
         
-        # Convert fingerprints to a numpy array
-        np_fps = []
-        for fp in fps:
-            arr = np.zeros((1,))
-            DataStructs.ConvertToNumpyArray(fp, arr)
-            np_fps.append(arr)
+        self.model = RandomForestClassifier(
+            n_estimators=self.n_estimators,
+            max_depth=self.max_depth,
+            min_samples_leaf=2,
+            max_features='sqrt',
+            class_weight='balanced',
+            random_state=42,
+            n_jobs=-1
+        )
         
-        return np.array(np_fps)
-
-    def run_training(self):
-        X = self.generate_fingerprints()
-        y = self.df['pIC50'].values
-
-        # Split data (80% Train, 20% Test)
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-
-        print(f"Training on {len(X_train)} molecules...")
         self.model.fit(X_train, y_train)
+        print("Training complete.")
 
-        # Evaluate
-        predictions = self.model.predict(X_test)
-        mse = mean_squared_error(y_test, predictions)
-        r2 = r2_score(y_test, predictions)
-        
-        print(f"✅ Training Complete!")
-        print(f"📊 R² Score: {r2:.3f}")
-        print(f"📊 MSE: {mse:.3f}")
-        
-        return self
+    def evaluate(self, X_test, y_test):
+        """Runs evaluation using the mathematical custom threshold."""
+        if not self.model:
+            raise ValueError("Model not trained yet!")
 
-    def save_model(self, model_name: str):
-        base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        model_path = os.path.join(base_path, "models", model_name)
-        os.makedirs(os.path.dirname(model_path), exist_ok=True)
+        # Get probabilities and apply custom threshold
+        probs = self.model.predict_proba(X_test)[:, 1]
+        preds = (probs >= self.threshold).astype(int)
         
+        mcc = matthews_corrcoef(y_test, preds)
+        print(f"\n--- Evaluation Results ---")
+        print(f"Custom Threshold: {self.threshold}")
+        print(f"Matthews Correlation Coefficient: {mcc:.4f}")
+        print(f"Confusion Matrix:\n{confusion_matrix(y_test, preds)}")
+        return mcc
+
+    def save_model(self, model_dir='../models/'):
+        """Saves the model and metadata for the virtual screening script."""
+        if not self.model:
+            print("No model to save.")
+            return
+
+        os.makedirs(model_dir, exist_ok=True)
+        
+        # Save the model object
+        model_path = os.path.join(model_dir, 'mmp9_rf_champion.pkl')
         joblib.dump(self.model, model_path)
-        print(f"💾 Model saved to: {model_path}")
+        
+        # Save metadata (the 'key' to using the model correctly)
+        meta_path = os.path.join(model_dir, 'mmp9_rf_metadata.pkl')
+        metadata = {
+            'optimal_threshold': self.threshold,
+            'model_type': 'RandomForestClassifier',
+            'n_features': 2048,
+            'target': 'MMP-9'
+        }
+        joblib.dump(metadata, meta_path)
+        
+        print(f"Model and Metadata saved to {model_dir}")
 
+# --- Automation Script ---
 if __name__ == "__main__":
-    processed_data = r"E:\VS Code\machine_learning\drug_discovery\data\processed\mmp9_processed.csv"
+    # 1. Initialize Trainer
+    trainer = ModelTrainer()
     
-    trainer = ModelTrainer(processed_data)
-    trainer.run_training().save_model("mmp9_rf_model.joblib")
+    # 2. Load the ready-to-use data from preprocess.py
+    X_train, y_train, X_test, y_test = trainer.load_data('../data/processed/mmp9_model_ready.npz')
+    
+    # 3. Execute Pipeline
+    trainer.train(X_train, y_train)
+    trainer.evaluate(X_test, y_test)
+    trainer.save_model()
