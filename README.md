@@ -7,21 +7,26 @@ Matrix Metalloproteinase-9 (MMP-9) is a key enzyme involved in cancer metastasis
 ## 📊 Performance Highlights
 * **Model:** Optimized Random Forest (ECFP4 Fingerprints)
 * **Champion MCC:** 0.6277 (Matthews Correlation Coefficient)
-* **Custom Decision Threshold:** 0.4417 (Mathematically optimized for imbalanced chemical data)
-* **Key Findings:** Successfully identified Zinc-binding ACE inhibitors (Enalapril) and potent cancer drugs (Ibrutinib) as high-probability MMP-9 hits.
+* **Custom Decision Threshold:** 0.4417 (Optimized for high precision)
+* **Key Findings:** Successfully identified Zinc-binding ACE inhibitors (Enalapril) as potential hits.
 
 ## 🏗️ System Architecture (OOP)
-The project is refactored from exploratory Jupyter Notebooks into a modular Python package:
-* `ingest.py`: Automated ChEMBL API data retrieval and pIC50 transformation.
-* `preprocess.py`: Structurally-aware Scaffold Splitting and SMOTE class balancing.
+* `main.py`: Master orchestrator for the end-to-end pipeline.
+* `app.py`: **Streamlit Web Dashboard** for single-molecule and batch prediction.
+* `ingest.py`: Automated ChEMBL API retrieval and pIC50 transformation.
+* `preprocess.py`: Scaffold Splitting and **SMOTE** class balancing.
 * `training.py`: Model serialization and metadata management.
-* `screen.py`: Production-ready Virtual Screening with ADMET (Lipinski) filtering.
+* `screen.py`: Virtual Screening with **Lipinski's Rule of 5** filtering.
 
 ## 🚀 How to Run
-1. Install dependencies: `pip install rdkit-pypi scikit-learn chembl_webresource_client pandas xgboost`
-2. Run the pipeline:
-   ```bash
-   python src/ingest.py
-   python src/preprocess.py
-   python src/training.py
-   python src/screen.py
+1. **Install:** `pip install -r requirements.txt`
+2. **Train & Screen:** `python src/main.py`
+3. **Launch UI:** `streamlit run src/app.py`
+
+## 🧠 Data Science Insights
+* **Imbalance Handling:** Handled a 3:1 class imbalance using SMOTE to improve minority class recall.
+* **Structural Integrity:** Utilized Murcko Scaffold splitting to ensure the model generalizes to novel chemical structures.
+
+![alt text](image.png)
+
+![alt text](image-1.png)
