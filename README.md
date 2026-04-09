@@ -1,7 +1,7 @@
 ---
 title: MMP-9 Inhibitor Predictor
 emoji: 🧬
-colorFrom: teal
+colorFrom: green
 colorTo: blue
 sdk: docker
 pinned: false
