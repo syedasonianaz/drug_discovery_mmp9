@@ -4,11 +4,12 @@ FROM python:3.10-slim
 
 # ── System dependencies ────────────────────────────────────────────────────────
 # libXrender and libXext required by RDKit for molecule rendering
+# libgl1 replaced libgl1-mesa-glx in Debian Trixie
 RUN apt-get update && apt-get install -y \
     libxrender1 \
     libxext6 \
     libx11-6 \
-    libgl1-mesa-glx \
+    libgl1 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -24,13 +25,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 # ── Copy project files ─────────────────────────────────────────────────────────
 # Models — needed at startup by DrugPredictor
 COPY download_models.py .
-RUN apt-get update && apt-get install -y \
-    libxrender1 \
-    libxext6 \
-    libx11-6 \
-    libgl1 \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
 
 # Source code
 COPY src/ ./src/
@@ -49,4 +43,3 @@ EXPOSE 7860
 
 # ── Entry point ────────────────────────────────────────────────────────────────
 CMD ["python", "src/app.py"]
-
