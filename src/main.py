@@ -1,46 +1,58 @@
-import sys
 import os
+import pandas as pd
 
-# Import our custom logic from the other .py files
 from ingest import DataIngestor
 from preprocess import MoleculePreprocessor
 from train import ModelTrainer
 from screen import VirtualScreener
 
+NPZ_PATH    = '../data/processed/mmp9_model_ready_splits.npz'
+CLEAN_PATH  = '../data/processed/mmp9_clean.csv'
+MODEL_DIR   = '../models/'
+SCREEN_OUT  = '../data/processed/virtual_screening_hits.csv'
+
+
 def main():
-    print("🚀 Starting MMP-9 Drug Discovery Pipeline...")
+    print("Starting MMP-9 Drug Discovery Pipeline...")
 
     # --- 1. Ingestion ---
-    # Downloads and cleans data from ChEMBL
     ingestor = DataIngestor(target_id='CHEMBL321')
     ingestor.fetch_data()
     ingestor.clean_and_transform()
-    ingestor.save_data()
+    ingestor.save_data(CLEAN_PATH)
 
     # --- 2. Preprocessing ---
-    # Handles Scaffold Splitting and Fingerprinting
-    import pandas as pd
-    df_clean = pd.read_csv('../data/processed/mmp9_clean.csv')
-    
+    df_clean = pd.read_csv(CLEAN_PATH)
+
     preprocessor = MoleculePreprocessor()
     df_train, df_test = preprocessor.scaffold_split(df_clean)
-    X_tr, y_tr, X_te, y_te = preprocessor.prepare_matrices(df_train, df_test)
-    preprocessor.save_processed_data(X_tr, y_tr, X_te, y_te, '../data/processed/mmp9_model_ready.npz')
+    X_tr, y_tr, X_te, y_te, smi_tr, smi_te = preprocessor.prepare_matrices(df_train, df_test)
+    preprocessor.save_processed_data(
+        X_tr, y_tr, X_te, y_te, smi_tr, smi_te, NPZ_PATH
+    )
 
     # --- 3. Training ---
-    # Trains the champion model and saves .pkl files
     trainer = ModelTrainer()
-    trainer.train(X_tr, y_tr)
-    trainer.evaluate(X_te, y_te)
-    trainer.save_model()
+    X_train, y_train, X_test, y_test, smiles_train, smiles_test = trainer.load_data(NPZ_PATH)
+    trainer.train(X_train, y_train)
+    mcc_champ, y_pred_champ = trainer.evaluate(X_test, y_test)
 
-    # --- 4. Screening ---
-    # Final virtual screen for drug repurposing
-    screener = VirtualScreener('../models/mmp9_rf_champion.pkl', '../models/mmp9_rf_metadata.pkl')
+    rf_hx = trainer.warhead_analysis(
+        X_train, y_train, X_test, y_test,
+        smiles_train, smiles_test, y_pred_champ
+    )
+    trainer.save_model(rf_hx, mcc_champ, MODEL_DIR)
+
+    # --- 4. Virtual Screening ---
+    screener = VirtualScreener(
+        os.path.join(MODEL_DIR, 'mmp9_rf_champion.pkl'),
+        os.path.join(MODEL_DIR, 'mmp9_rf_metadata.pkl')
+    )
     screener.fetch_chembl_approved()
-    hits = screener.run_screen()
+    screener.run_screen(SCREEN_OUT)
 
-    print("\n✅ Pipeline execution successful! Check the 'data/processed' folder for hits.")
+    print("\nPipeline complete. Check data/processed/ for results.")
+
 
 if __name__ == "__main__":
     main()
