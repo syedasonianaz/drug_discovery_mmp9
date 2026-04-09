@@ -24,7 +24,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 # ── Copy project files ─────────────────────────────────────────────────────────
 # Models — needed at startup by DrugPredictor
 COPY download_models.py .
-RUN python download_models.py
+RUN apt-get update && apt-get install -y \
+    libxrender1 \
+    libxext6 \
+    libx11-6 \
+    libgl1 \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 # Source code
 COPY src/ ./src/
