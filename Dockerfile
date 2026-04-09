@@ -23,7 +23,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # ── Copy project files ─────────────────────────────────────────────────────────
 # Models — needed at startup by DrugPredictor
-COPY models/ ./models/
+COPY mmp9_rf_champion.pkl ./models/mmp9_rf_champion.pkl
+COPY mmp9_rf_explicit_warhead.pkl ./models/mmp9_rf_explicit_warhead.pkl
+COPY mmp9_rf_metadata.pkl ./models/mmp9_rf_metadata.pkl
 
 # Source code
 COPY src/ ./src/
