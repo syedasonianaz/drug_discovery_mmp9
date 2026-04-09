@@ -1,26 +1,26 @@
-# Models
-models/
-*.joblib
-*.pkl
-*.h5
-*.pt
-
 # Data
 data/raw/
-mmp9.csv
-
 data/processed/
-mmp9_clean.csv
-mmp9_processed.csv
 
 # Notebooks
 .ipynb_checkpoints/
-**/notebook_trial*
 
 # Python
 __pycache__/
 *.pyc
+*.pyo
 .env
 
 # Experimental work
 experiments/
+
+# Docking — generated files
+docking/ligands/
+docking/ligands_sdf/
+docking/ligands_pdbqt/
+docking/receptor/
+docking/renders/
+docking/results_df.csv
+*.pdbqt
+*.sdf
+*.pdb
